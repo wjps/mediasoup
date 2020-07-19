@@ -47,7 +47,7 @@ namespace RTC
 		this->processTimer = new Timer(this);
 
 		// TODO: Let's see.
-		// this->rtpTransportControllerSend->EnablePeriodicAlrProbing(true);
+		this->rtpTransportControllerSend->EnablePeriodicAlrProbing(true);
 
 		// clang-format off
 		this->processTimer->Start(std::min(

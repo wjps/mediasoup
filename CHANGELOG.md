@@ -1,6 +1,25 @@
 # Changelog
 
 
+### 3.6.14
+
+* Fix `usrsctp` vulnerability (PR #439).
+* Fix issue #435 (thanks to @penguinol for reporting).
+* `TransportCongestionControlClient.cpp`: Enable periodic ALR probing to recover faster from network issues.
+* Update NPM deps.
+* Update `nlohmann::json` C++ dep to 3.9.0.
+* Update `Catch` to 2.13.0.
+
+
+### 3.6.13
+
+* RTP on `DirectTransport` (issue #433, PR #434):
+  - New API `producer.send(rtpPacket: Buffer)`.
+  - New API `consumer.on('rtp', (rtpPacket: Buffer)`.
+  - New API `directTransport.sendRtcp(rtcpPacket: Buffer)`.
+  - New API `directTransport.on('rtcp', (rtpPacket: Buffer)`.
+
+
 ### 3.6.12
 
 * Release script.

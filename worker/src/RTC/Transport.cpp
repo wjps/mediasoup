@@ -1257,7 +1257,7 @@ namespace RTC
 				this->mapProducers.erase(producer->id);
 
 				// Tell the child class to clear associated SSRCs.
-				for (auto& kv : producer->GetRtpStreams())
+				for (const auto& kv : producer->GetRtpStreams())
 				{
 					auto* rtpStream = kv.first;
 
@@ -1447,47 +1447,6 @@ namespace RTC
 
 		switch (notification->eventId)
 		{
-			case PayloadChannel::Notification::EventId::DATA_PRODUCER_SEND:
-			{
-				// This may throw.
-				RTC::DataProducer* dataProducer = GetDataProducerFromInternal(notification->internal);
-
-				if (dataProducer->GetType() != RTC::DataProducer::Type::DIRECT)
-				{
-					MS_THROW_ERROR("cannot send direct messages on this DataProducer");
-				}
-
-				auto jsonPpidIt = notification->data.find("ppid");
-
-				if (jsonPpidIt == notification->data.end() || !Utils::Json::IsPositiveInteger(*jsonPpidIt))
-				{
-					MS_THROW_TYPE_ERROR("invalid ppid");
-				}
-
-				auto ppid       = jsonPpidIt->get<uint32_t>();
-				auto len        = notification->payloadLen;
-				const auto* msg = notification->payload;
-
-				if (len > this->maxMessageSize)
-				{
-					MS_WARN_TAG(
-					  message,
-					  "given message exceeds maxMessageSize value [maxMessageSize:%zu, len:%zu]",
-					  len,
-					  this->maxMessageSize);
-
-					return;
-				}
-
-				// Pass the message to the DataProducer.
-				dataProducer->ReceiveMessage(ppid, msg, len);
-
-				// Increase receive transmission.
-				DataReceived(len);
-
-				break;
-			}
-
 			default:
 			{
 				MS_ERROR("unknown event '%s'", notification->event.c_str());
@@ -1904,7 +1863,7 @@ namespace RTC
 							  rtcp,
 							  "no Consumer found for received PLI Feedback packet "
 							  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
-							  feedback->GetMediaSsrc(),
+							  feedback->GetSenderSsrc(),
 							  feedback->GetMediaSsrc());
 
 							break;
@@ -1914,7 +1873,7 @@ namespace RTC
 						  rtcp,
 						  "PLI received, requesting key frame for Consumer "
 						  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
-						  feedback->GetMediaSsrc(),
+						  feedback->GetSenderSsrc(),
 						  feedback->GetMediaSsrc());
 
 						consumer->ReceiveKeyFrameRequest(
@@ -1943,7 +1902,7 @@ namespace RTC
 								  rtcp,
 								  "no Consumer found for received FIR Feedback packet "
 								  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 ", item ssrc:%" PRIu32 "]",
-								  feedback->GetMediaSsrc(),
+								  feedback->GetSenderSsrc(),
 								  feedback->GetMediaSsrc(),
 								  item->GetSsrc());
 
@@ -1954,7 +1913,7 @@ namespace RTC
 							  rtcp,
 							  "FIR received, requesting key frame for Consumer "
 							  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 ", item ssrc:%" PRIu32 "]",
-							  feedback->GetMediaSsrc(),
+							  feedback->GetSenderSsrc(),
 							  feedback->GetMediaSsrc(),
 							  item->GetSsrc());
 
@@ -1986,7 +1945,7 @@ namespace RTC
 							  "ignoring unsupported %s Feedback PS AFB packet "
 							  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
 							  RTC::RTCP::FeedbackPsPacket::MessageType2String(feedback->GetMessageType()).c_str(),
-							  feedback->GetMediaSsrc(),
+							  feedback->GetSenderSsrc(),
 							  feedback->GetMediaSsrc());
 
 							break;
@@ -2000,7 +1959,7 @@ namespace RTC
 						  "ignoring unsupported %s Feedback packet "
 						  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
 						  RTC::RTCP::FeedbackPsPacket::MessageType2String(feedback->GetMessageType()).c_str(),
-						  feedback->GetMediaSsrc(),
+						  feedback->GetSenderSsrc(),
 						  feedback->GetMediaSsrc());
 					}
 				}
@@ -2031,7 +1990,7 @@ namespace RTC
 					  rtcp,
 					  "no Consumer found for received Feedback packet "
 					  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
-					  feedback->GetMediaSsrc(),
+					  feedback->GetSenderSsrc(),
 					  feedback->GetMediaSsrc());
 
 					break;
@@ -2047,7 +2006,7 @@ namespace RTC
 							  rtcp,
 							  "no Consumer found for received NACK Feedback packet "
 							  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
-							  feedback->GetMediaSsrc(),
+							  feedback->GetSenderSsrc(),
 							  feedback->GetMediaSsrc());
 
 							break;
@@ -2083,7 +2042,7 @@ namespace RTC
 						  "ignoring unsupported %s Feedback packet "
 						  "[sender ssrc:%" PRIu32 ", media ssrc:%" PRIu32 "]",
 						  RTC::RTCP::FeedbackRtpPacket::MessageType2String(feedback->GetMessageType()).c_str(),
-						  feedback->GetMediaSsrc(),
+						  feedback->GetSenderSsrc(),
 						  feedback->GetMediaSsrc());
 					}
 				}
@@ -2463,7 +2422,7 @@ namespace RTC
 		  this, producer, mappedSsrc, worstRemoteFractionLost);
 	}
 
-	inline void Transport::OnConsumerSendRtpPacket(RTC::Consumer* /*consumer*/, RTC::RtpPacket* packet)
+	inline void Transport::OnConsumerSendRtpPacket(RTC::Consumer* consumer, RTC::RtpPacket* packet)
 	{
 		MS_TRACE();
 
@@ -2513,25 +2472,25 @@ namespace RTC
 				}
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(consumer, packet, cb);
 #else
 			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
 				if (sent)
 					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(consumer, packet, cb);
 #endif
 		}
 		else
 		{
-			SendRtpPacket(packet);
+			SendRtpPacket(consumer, packet);
 		}
 
 		this->sendRtpTransmission.Update(packet);
 	}
 
-	inline void Transport::OnConsumerRetransmitRtpPacket(RTC::Consumer* /*consumer*/, RTC::RtpPacket* packet)
+	inline void Transport::OnConsumerRetransmitRtpPacket(RTC::Consumer* consumer, RTC::RtpPacket* packet)
 	{
 		MS_TRACE();
 
@@ -2581,19 +2540,19 @@ namespace RTC
 				}
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(consumer, packet, cb);
 #else
 			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
 				if (sent)
 					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(consumer, packet, cb);
 #endif
 		}
 		else
 		{
-			SendRtpPacket(packet);
+			SendRtpPacket(consumer, packet);
 		}
 
 		this->sendRtxTransmission.Update(packet);
@@ -2682,30 +2641,7 @@ namespace RTC
 	{
 		MS_TRACE();
 
-		switch (dataConsumer->GetType())
-		{
-			case RTC::DataConsumer::Type::SCTP:
-			{
-				this->sctpAssociation->SendSctpMessage(dataConsumer, ppid, msg, len);
-
-				break;
-			}
-
-			case RTC::DataConsumer::Type::DIRECT:
-			{
-				// Notify the Node DirectTransport.
-				json data = json::object();
-
-				data["ppid"] = ppid;
-
-				PayloadChannel::Notifier::Emit(dataConsumer->id, "message", data, msg, len);
-
-				// Increase send transmission.
-				DataSent(len);
-
-				break;
-			}
-		}
+		SendMessage(dataConsumer, ppid, msg, len);
 	}
 
 	inline void Transport::OnDataConsumerDataProducerClosed(RTC::DataConsumer* dataConsumer)
@@ -2918,14 +2854,14 @@ namespace RTC
 				}
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(nullptr, packet, cb);
 #else
 			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
 				if (sent)
 					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 			});
 
-			SendRtpPacket(packet, cb);
+			SendRtpPacket(nullptr, packet, cb);
 #endif
 		}
 		else
@@ -2933,7 +2869,7 @@ namespace RTC
 			// May emit 'trace' event.
 			EmitTraceEventProbationType(packet);
 
-			SendRtpPacket(packet);
+			SendRtpPacket(nullptr, packet);
 		}
 
 		this->sendProbationTransmission.Update(packet);
